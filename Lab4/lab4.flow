@@ -1,0 +1,31 @@
+import ds/array;
+import ds/tree;
+
+inds_slow(arr : [int], m : int) -> [Pair<int,int>]
+{
+    //slow realisation
+    foldi(arr, [], \i, acc1, arr_i -> {    
+        concat(acc1, foldi(arr, [], \j, acc2, arr_j -> { if(arr_i + arr_j == m) arrayPush(acc2, Pair(arr_i, arr_j)) else acc2 }))
+    });
+}
+
+inds_fast(arr : [int], m : int) -> [Pair<int,int>]
+{ 
+    //faster than previouse realisatioin
+    indexes : Tree<int, [int]> = foldi(arr, makeTree(), \i, acc, arr_i -> {
+        treePushToArrayValue(acc, arr_i, i);
+        });
+
+    foldi(arr, [], \i, acc, arr_i -> {
+        concat(acc, map(lookupTreeDef(indexes, m - arr_i, []), \j -> Pair(i, j)));
+    });
+}
+
+main()
+{
+    arr : [int] = [1, 4 , 3, 4,]; // integer array
+    m : int = 5; // integer variable
+
+    println(inds_fast(arr, m));
+    quit(0);
+}
