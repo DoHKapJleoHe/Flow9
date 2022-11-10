@@ -1,0 +1,34 @@
+import string;
+import lingo/pegcode/driver;
+
+grammar = compilePegGrammar("#include C:\Users\eduar\MTK_Labs\Grammar.lingo");
+
+Exp ::= Add, Mul, Int; //union
+Add(left : Exp, right : Exp); //struct
+Mul(left : Exp, right : Exp);
+Int(val : int);
+
+calculate(exp : Exp)
+{
+    switch (exp : Exp) 
+    {
+        Int(c) : c;
+        Add(left, right) : calculate(left) + calculate(right);
+        Mul(left, right) : calculate(left) * calculate(right);
+    }    
+}
+
+parse(text : string)
+{
+    parsic(grammar, text, defaultPegActions);
+}
+
+main()
+{
+    text : string = "1+2*3";
+    println(parse(text));
+
+    println(calculate(parse(text)));
+
+    quit(0);
+}
