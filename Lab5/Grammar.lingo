@@ -1,0 +1,7 @@
+exp = sum;
+
+sum = mul:e1 "+" sum:e2 {Add(:e1, :e2)} | mul;
+mul = digit:e1 "*" mul:e2 {Mul(:e1, :e2)} | digit;
+
+digit = number+$s {Int(s2i($s))};
+number = '0' - '9';
