@@ -21,7 +21,8 @@ inds(a : [int], m : int) -> [Pair<int, int>]
 Complication: make this function of complexity O(n log(n)), not O(n2). Use functions: foldi, makeTree, setTree, lookupTree.
 
 5 LAB:
-1)Write a PEG-parser for a grammar of simple arithmetic expressions (with integer constants, operation +, *, and parentheses () ),
+Write a PEG-parser for a grammar of simple arithmetic expressions (with integer constants, operation +, *, and parentheses () ),
 which generates AST-tree. Use library lingo.
-2)Convert an AST-tree of arithmetic expressions back into a string. Implement a calculator, which computes the value of an arithmetic
+
+Convert an AST-tree of arithmetic expressions back into a string. Implement a calculator, which computes the value of an arithmetic
 expression.
