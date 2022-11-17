@@ -1,0 +1,76 @@
+import string;
+import ds/array;
+import lingo/pegcode/driver;
+
+grammar = compilePegGrammar("#include C:\Users\eduar\MTK_Labs\Grammar.lingo");
+
+Exp::= Sum, Mul, Int;
+Sum();
+Mul();
+Int(val : int);
+
+calculate(exp : [Exp]) -> int
+{   
+    r = foldi(exp, ref[], \i, stack, expr_i -> {
+            switch (expr_i) 
+            {
+                Int(c) : 
+                {
+                    Push(stack, c);
+                }
+                Sum() : 
+                {
+                    a = Pop(stack);
+
+                    b = Pop(stack);
+
+                    c = a + b;
+
+                    Push(stack, c);
+                }
+                Mul() : 
+                {
+                    a = Pop(stack);
+
+                    b = Pop(stack);
+
+                    c = a * b;
+
+                    Push(stack, c);
+                }
+            }
+
+            stack;
+        });
+
+    Pop(r);
+}
+
+// returning the last element of the given array
+Pop(stack : ref [int]) -> int
+{
+   a : int = lastElement(^stack, 0);
+   stack := subrange(^stack, 0, length(^stack) - 1); 
+   a;
+}
+
+// adding an element to the given array
+Push(stack : ref[int], element : int) 
+{
+    refArrayPush(stack, element);
+}
+
+parse(text : string)
+{
+    parsic(grammar, text, defaultPegActions);
+}
+
+main()
+{
+    text : string = "1 2 + 2 +";
+    println(parse(text));
+
+    println(calculate(parse(text)));
+    
+    quit(0);
+}
