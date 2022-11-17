@@ -1,0 +1,10 @@
+exp = operation+;
+
+operation = number | mul | sum;
+
+sum = ws "+" ws {Sum()};
+mul = ws "*" ws {Mul()};
+number = ws digit+$s ws {Int(s2i($s))};
+
+ws = ' '*;
+digit = '0' - '9';
