@@ -4,8 +4,6 @@ import ds/tree;
 import ds/set;
 import lingo/pegcode/driver;
 
-//TODO: Select correctness in checkBody
-
 grammar = compilePegGrammar("#include C:\Users\eduar\MTK_Labs\lab11_grammar.lingo");
 
 Exp ::= Add, Sub, Mul, Div, Var, Int, APP, UPD;
