@@ -1,0 +1,421 @@
+import string;
+import ds/array;
+import ds/tree;
+import ds/set;
+import lingo/pegcode/driver;
+
+grammar = compilePegGrammar("#include C:\Users\eduar\MTK_Labs\lab10_grammar.lingo");
+
+Exp ::= Add, Sub, Mul, Div, Var, Int, Neg;
+
+Sub(left: Exp, right: Exp);
+Add(left: Exp, right: Exp); 
+Mul(left: Exp, right: Exp);
+Div(left: Exp, right: Exp);
+Var(letter: string);
+Int(num: int);
+Neg(exp: Exp);
+_Rule(left: Exp, right: Exp);
+
+applyAllRules(exp: Exp, rules: [_Rule], res: Set<Maybe<Exp>>) -> Set<Maybe<Exp>>
+{
+    //println("-------------------------------");
+    //println(convertExpToString(exp));
+    //println("IN:");
+    initSet : Set<Maybe<Exp>> = makeSet1(Some(exp)); // exp is identical to itself
+    combSet = switch(exp: Exp)
+              {
+                  Add(left, right):
+                  {
+                      l_set = applyAllRules(left, rules, makeSet1(Some(left)));
+                      r_set = applyAllRules(right, rules, makeSet1(Some(right)));
+          
+                      // the full Add will be all combinations of elements from l_val set and elements from r_val set
+                      // Add(l_set, r_set) for each pair of elements from l_set and r_set
+                      mergeSets(initSet, foldSet(l_set, makeSet(), \set_l, l_i ->{
+                          mergeSets(set_l, foldSet(r_set, makeSet(), \set_r, r_i -> {
+                              maybeAdd = maybeMap2(\l, r -> Add(l, r));
+                              insertSet(set_r, maybeAdd(l_i, r_i));
+                          }))
+                      }));
+                  }
+                  Sub(left, right):
+                  {
+                      l_set = applyAllRules(left, rules, makeSet1(Some(left)));
+                      r_set = applyAllRules(right, rules, makeSet1(Some(right)));
+          
+                      // the full Sub will be all combinations of elements from l_val set and elements from r_val set
+                      // Sub(l_set, r_set) for each pair of elements from l_set and r_set
+                      mergeSets(initSet, foldSet(l_set, makeSet(), \set_l, l_i ->{
+                          mergeSets(set_l, foldSet(r_set, makeSet(), \set_r, r_i -> {
+                              maybeSub = maybeMap2(\l, r -> Sub(l, r));
+                              insertSet(set_r, maybeSub(l_i, r_i));
+                          }))
+                      }));
+                  }
+                  Mul(left, right):
+                  {
+                      l_set = applyAllRules(left, rules, makeSet1(Some(left)));
+                      r_set = applyAllRules(right, rules, makeSet1(Some(right)));
+          
+                      // the full Mul will be all combinations of elements from l_val set and elements from r_val set
+                      // Mul(l_set, r_set) for each pair of elements from l_set and r_set
+                      mergeSets(initSet, foldSet(l_set, makeSet(), \set_l, l_i ->{
+                          mergeSets(set_l, foldSet(r_set, makeSet(), \set_r, r_i -> {
+                              maybeMul = maybeMap2(\l, r -> Mul(l, r));
+                              insertSet(set_r, maybeMul(l_i, r_i));
+                          }))
+                      }));
+                  }
+                  Div(left, right):
+                  {
+                      l_set = applyAllRules(left, rules, makeSet1(Some(left)));
+                      r_set = applyAllRules(right, rules, makeSet1(Some(right)));
+          
+                      // the full Div will be all combinations of elements from l_val set and elements from r_val set
+                      // Div(l_set, r_set) for each pair of elements from l_set and r_set
+                      mergeSets(initSet, foldSet(l_set, makeSet(), \set_l, l_i ->{
+                          mergeSets(set_l, foldSet(r_set, makeSet(), \set_r, r_i -> {
+                              maybeDiv = maybeMap2(\l, r -> Div(l, r));
+                              insertSet(set_r, maybeDiv(l_i, r_i));
+                          }))
+                      }));
+                  }
+                  Neg(e):
+                  {
+                      set = applyAllRules(e, rules, makeSet1(Some(e)));
+
+                      foldSet(set, makeSet(), \i_set, i -> {
+                          insertSet(i_set, maybeMap(i, \c -> Neg(c)));
+                      });
+          
+                      mergeSets(initSet, set);
+                  }
+                  Int(num): initSet;
+                  Var(letter): initSet;
+              }
+
+    //println("OUT:");
+    //println(convertExpToString(exp));
+    //println("Comb set");
+    //println(combSet);
+
+    // now i have to apply all rules to the generated above set
+    newSet = mergeSets(combSet, foldSet(combSet, makeSet(), \set_i, exp_i ->{
+        mergeSets(set_i, fold(rules, makeSet(), \set_j, rule -> {
+            switch(exp_i)
+            {
+                None(): set_j;
+                Some(a): insertSet(set_j, applyRulePrep(a, rule));
+            }
+        }));
+    }));
+
+    // to be sure that there is no expression or subexpression from the previous merge to
+    // which we can apply any rule, i am doing another foldSet, but i call here ApplyAllRules
+    // because there could appear subexpressions to which i can apply rule
+    foldSet(differenceSets(newSet, res), mergeSets(res, newSet), \acc, ex -> { // differenceSets(res, newSet)
+        switch (ex) 
+        {
+            None(): acc;
+            Some(a):{
+                mergeSets(acc, applyAllRules(a, rules, acc));
+            }
+        }
+    });    
+}
+
+applyRule(rule_right: Exp, rep: Tree) -> Maybe<Exp>
+{
+    switch(rule_right: Exp)
+    {
+        Add(left, right):
+        {
+            l_val = applyRule(left, rep);
+            r_val = applyRule(right, rep);
+
+            maybeAdd = maybeMap2(\l, r -> Add(l, r));
+            maybeAdd(l_val, r_val);
+        }
+        Sub(left, right):
+        {
+            l_val = applyRule(left, rep);
+            r_val = applyRule(right, rep);
+
+            maybeSub = maybeMap2(\l, r -> Sub(l, r));
+            maybeSub(l_val, r_val);
+        }
+        Mul(left, right):
+        {
+            l_val = applyRule(left, rep);
+            r_val = applyRule(right, rep);
+
+            maybeMul = maybeMap2(\l, r -> Mul(l, r));
+            maybeMul(l_val, r_val);
+        }
+        Div(left, right):
+        {
+            l_val = applyRule(left, rep);
+            r_val = applyRule(right, rep);
+
+            maybeDiv = maybeMap2(\l, r -> Div(l, r));
+            maybeDiv(l_val, r_val);
+        }
+        Neg(e):
+        {
+            val = applyRule(e, rep);
+
+            maybeMap(val, \c -> Neg(c));
+        }
+        Int(num):
+        {
+            Some(Int(num));
+        }
+        Var(letter):
+        {
+            lookupTree(rep, letter);
+        }
+    }   
+}
+
+applyRulePrep(exp: Exp, rule: _Rule) -> Maybe<Exp>
+{
+    /*replacements = compare(exp, rule.left, Some(makeTree())); // getting set of replacements
+    applyRule(rule.right, replacements);*/
+
+    replacements = compare(exp, rule.left, Some(makeTree())); // getting set of replacements
+    maybeBind(replacements, \repl -> applyRule(rule.right, repl));
+}
+
+compare(exp: Exp, rule_left: Exp, rep: Maybe<Tree>) -> Maybe<Tree> //this function compares if expression is similar to rule
+{
+    // perhaps i should switch in foldi because i receive an array of rules
+    switch(rule_left)
+    {
+        Add(left, right):
+        {
+            switch(exp: Exp)
+            {
+                Add(l, r):
+                {
+                    r1 = compare(l, left, rep);
+                    r2 = compare(r, right, r1);
+                    r2; // returned tree
+                }
+                default: None();
+            }
+        }
+        Sub(left, right):
+        {
+            switch(exp: Exp)
+            {
+                Sub(l, r):
+                {
+                    r1 = compare(l, left, rep);
+                    r2 = compare(r, right, r1);
+                    r2; // returned tree
+                }
+                default: None();
+            }
+        }
+        Mul(left, right):
+        {
+            switch(exp: Exp)
+            {
+                Mul(l, r):
+                {
+                    r1 = compare(l, left, rep);
+                    r2 = compare(r, right, r1);
+                    r2; // returned tree
+                }
+                default: None();
+            }   
+        }
+        Div(left, right):
+        {
+            switch(exp: Exp)
+            {
+                Div(l, r):
+                {
+                    r1 = compare(l, left, rep);
+                    r2 = compare(r, right, r1);
+                    r2; // returned tree
+                }
+                default: None();
+            }
+        }
+        Neg(e):
+        {
+            switch(exp: Exp)
+            {
+                Neg(f):
+                {
+                    r = compare(f, e, rep);
+                    r;
+                }
+                default: None();
+            }
+        }
+        Int(num):
+        {
+            switch(exp: Exp)
+            {
+                Int(num1):
+                {
+                    if(num1 == num)
+                    {
+                        rep;
+                    }
+                    else
+                    {
+                        None();
+                    }
+                }
+                default: None();
+            }
+        }
+        Var(letter):
+        {
+            arg = maybeBind(rep, \e -> lookupTree(e, letter));
+
+            switch(arg)
+            {
+                Some(v):
+                {
+                    if(v == exp)
+                    {
+                        rep;
+                    }
+                    else
+                    {
+                        None();
+                    }
+                }
+                None():
+                {
+                    maybeMap(rep, \c -> setTree(c, letter, exp));
+                }
+            }
+        }
+    }
+}
+
+size(exp: Exp)
+{
+    switch(exp)
+    {
+        Add(left, right): size(left) + 1 + size(right);
+        Sub(left, right): size(left) + 1 + size(right);
+        Mul(left, right): size(left) + 1 + size(right);
+        Div(left, right): size(left) + 1 + size(right);
+        Neg(e): size(e) + 1;
+        Int(num): 1;
+        Var(letter): 1;
+    }
+}
+
+simplify(exp: Exp, rules: [_Rule]) -> Exp // function will return a set of simplified expressions
+{
+    set = applyAllRules(exp, rules, makeSet1(Some(exp)));
+    // now i have to find the smallest form from the set
+    foldSet(set, exp, \exp_i, i -> {
+        switch(i)
+        {
+            None(): exp_i;
+            Some(a):
+            {
+                if(size(a) > size(exp_i))
+                {
+                    //println(convertExpToString(a));
+                    //println(convertExpToString(exp_i));
+                    exp_i;
+                }
+                else
+                {
+                    //println(convertExpToString(a));
+                    a;
+                }
+            }
+        }
+    });
+}
+
+convertExpToString(exp: Exp) -> string
+{
+    switch (exp : Exp) 
+    {
+        Add(left, right): "(" + convertExpToString(left) + "+" + convertExpToString(right) + ")"; 
+        Sub(left, right): "(" + convertExpToString(left) + "-" + convertExpToString(right) + ")";
+        Mul(left, right): "(" + convertExpToString(left) + "*" + convertExpToString(right) + ")";
+        Div(left, right): "(" + convertExpToString(left) + "/" + convertExpToString(right) + ")";
+        Int(num): i2s(num);
+        Var(letter): letter;
+        Neg(e): "-" + "(" + convertExpToString(e) + ")";
+    }
+}
+
+buildSub(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Sub(acc, x));
+}
+
+buildAdd(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Add(acc, x));
+}
+
+buildMul(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Mul(acc, x));
+}
+
+buildDiv(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Mul(acc, x));
+}
+
+specialPegActions = {
+	s = setTree(defaultPegActions.t, "buildSub", buildSub);
+
+    a = setTree(s, "buildAdd", buildAdd);
+
+    m = setTree(a, "buildMul", buildMul);
+
+    d = setTree(m, "buildDiv", buildDiv);
+
+	SemanticActions(d);
+}
+
+parse(text : string)
+{
+    parsic(grammar, text, specialPegActions);
+}
+
+ParseRules(rule: string) -> _Rule
+{
+    index = strFindFirstOf(rule, "="); //returns index of "="
+
+    _Rule(parse(strLeft(rule, index)), parse(strRight(rule, index+1)));
+}
+
+main()
+{  
+    expression = "((x*1)+0)/((x*1)-0)";
+    //println(parse(expression)); 
+    rules_ = ["(x*1)=x",
+              "(1*x)=x",
+              "x/x=1",
+              "((x+y)*(x-y))=(x*x)-(y*y)",
+              "x+0=x",
+              "0+x=x",
+              "x-0=x",
+              "0-x=-x"];
+    
+    rules = map(rules_, ParseRules);
+    
+    //println(parse(expression));
+
+    r = simplify(parse(expression), rules);
+    println(convertExpToString(r));
+    quit(0);
+}
