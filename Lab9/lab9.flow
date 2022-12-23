@@ -1,0 +1,111 @@
+import string;
+import ds/array;
+import ds/tree;
+import lingo/pegcode/driver;
+
+grammar = compilePegGrammar("#include C:\Users\eduar\MTK_Labs\lab9_grammar.lingo");
+
+Exp ::= Add, Sub, Mul, Div, Var, Int, Neg;
+Sub(left: Exp, right: Exp);
+Add(left: Exp, right: Exp); 
+Mul(left: Exp, right: Exp);
+Div(left: Exp, right: Exp);
+Rat(num: int, denom: int);
+Int(num: int);
+Neg(val: int);
+Var(letter: string);
+
+makeRational(exp: Exp) -> Div
+{
+    switch(exp: Exp)
+    {
+        Add(left, right):
+        {
+            l_val = makeRational(left);
+            r_val = makeRational(right);
+
+            Div(Sum(Mul(l_val.left, r_val.right), Mul(r_val.left, l_val.right)), Mul(l_val.right, r_val.right));
+        }
+        Sub(left, right):
+        {
+            l_val = makeRational(left);
+            r_val = makeRational(right);
+
+            Div(Sub(Mul(l_val.left, r_val.right), Mul(r_val.left, l_val.right)), Mul(l_val.right, r_val.right));
+        }
+        Mul(left, right):
+        {
+            l_val = makeRational(left);
+            r_val = makeRational(right);
+
+            Div(Mul(l_val.left, r_val.left), Mul(l_val.right, r_val.right));
+        }
+        Div(left, right):
+        {
+            l_val = makeRational(left);
+            r_val = makeRational(right);
+
+            Div(Mul(l_val.left, r_val.right), Mul(l_val.right, r_val.right));    
+        }
+        Neg(num):
+        {
+            l_val = makeRational(num);
+
+            Div(Neg(l_val.left), l_val.right);
+        }
+        Int(num):
+        {
+            Div(num, 1);
+        }
+        Var(letter):
+        {
+            Div(Var(letter), Int(1));
+        }
+    }
+}
+
+buildSub(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Sub(acc, x));
+}
+
+buildAdd(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Add(acc, x));
+}
+
+buildMul(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Mul(acc, x));
+}
+
+buildDiv(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Mul(acc, x));
+}
+
+specialPegActions = {
+	s = setTree(defaultPegActions.t, "buildSub", buildSub);
+
+    a = setTree(s, "buildAdd", buildAdd);
+
+    m = setTree(a, "buildMul", buildMul);
+
+    d = setTree(m, "buildDiv", buildDiv);
+
+	SemanticActions(d);
+}
+
+parse(text : string)
+{
+    parsic(grammar, text, specialPegActions);
+}
+
+main()
+{  
+    text = "2*x";
+
+    println(parse(text));
+
+    quit(0);
+}
