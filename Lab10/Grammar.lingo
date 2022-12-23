@@ -1,0 +1,21 @@
+exp = sum | number;
+
+sum = ws sub:e1 ws plus*:e2 ws {buildAdd(:e1, :e2)} | sub;
+sub = ws mul:e1 ws minus*:e2 ws {buildSub(:e1, :e2)} | mul;
+mul = ws div:e1 ws star*:e2 ws {buildMul(:e1, :e2)} | div;
+div = ws neg:e1 ws slash*:e2 {buildDiv(:e1, :e2)} | neg; 
+
+plus = ws '+' ws sub:t ws {:t};
+minus = ws '-' ws mul:t ws {:t};
+star = ws '*' ws div:t ws {:t};
+slash = ws '/' ws neg:t  ws {:t};
+
+neg = ws '-' ws atom:e1 ws {Neg(:e1)} | atom;
+atom = number | var | ws '('ws exp:e ws')' ws {:e};
+
+ws = ' '*;
+number = ws digit+$s{Int(s2i($s))} | var;
+var = letter+$l {Var($l)};
+
+digit = '0' - '9';
+letter = 'a' - 'z';
