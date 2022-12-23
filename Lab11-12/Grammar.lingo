@@ -1,0 +1,61 @@
+program = varDef+:vars ws body:progbody {Program(:vars, :progbody)};
+
+varDef = ws "VAR" ws string:e1 ws ":" ws type:e2 ws ";" ws {DefVar(:e1, :e2)};
+type = int | array;
+int = "INT" {INT()};
+array = "[" ws type:e1 ws "]" {Array(:e1)};
+
+body = ws "{" ws (next | select | statement):b ws "}" ws {:b};
+
+assignment = ws string:e1 ws ":=" ws expression:e2 {Assignment(:e1, :e2)};
+
+next = ws nt+:b ws {Next(:b)};
+nt = ws (select | statement):n ws ";" ws {:n};
+
+select = ws statement:e1 ws st+:e2 {buildSelect(:e1, :e2)}   ;
+st = ws "U" ws statement:n ws {:n};
+
+statement = iteration | body | assignment | test;
+
+iteration = ws "(" ws body:b ws ")" ws "*" ws {Iter(:b)};
+
+test = ws "(" ws condition:e1 ws ")" ws "?" ws{Test(:e1)};
+
+condition = logic_or;
+logic_or = ws logic_and:c1 ws "||" ws logic_or:c2 ws {LogicOr(:c1, :c2)} | logic_and;
+logic_and = ws logic_not:c1 ws "&&" ws logic_and:c2 ws {LogicAnd(:c1, :c2)} | logic_not;
+logic_not = ws "NOT" ws logic_atom:c ws {LogicNot(:c)} | logic_atom;
+logic_atom =  ws '(' ws condition:cond ws ')' ws {:cond} | comparison;
+
+comparison = equal | not_equal | greater | greater_or_equal | less | less_or_equal;
+equal = ws expression:ex1 ws '==' ws expression:ex2 ws {Comparison(:ex1, :ex2, Equal())};
+not_equal = ws expression:ex1 ws '!=' ws expression:ex2 ws {Comparison(:ex1, :ex2, NotEqual())};
+greater = ws expression:ex1 ws '>' ws expression:ex2 ws {Comparison(:ex1, :ex2, Greater())};
+greater_or_equal = ws expression:ex1 ws '>=' ws expression:ex2 ws {Comparison(:ex1, :ex2, GreaterEqual())};
+less = ws expression:ex1 ws '<' ws expression:ex2 ws {Comparison(:ex1, :ex2, Less())};
+less_or_equal = ws expression:ex1 ws '<=' ws expression:ex2 ws {Comparison(:ex1, :ex2, LessEqual())};
+
+
+expression = sum;
+sum = ws sub:e1 ws plus+:e2 ws {buildAdd(:e1, :e2)} | sub;
+sub = ws mul:e1 ws minus+:e2 ws {buildSub(:e1, :e2)} | mul;
+mul = ws div:e1 ws star+:e2 ws {buildMul(:e1, :e2)} | div;
+div = ws neg:e1 ws slash+:e2 {buildDiv(:e1, :e2)} | neg; 
+
+plus = ws '+' ws sub:t ws {:t};
+minus = ws '-' ws mul:t ws {:t};
+star = ws '*' ws div:t ws {:t};
+slash = ws '/' ws neg:t  ws {:t};
+
+neg = ws '-' ws atom:e1 ws {Neg(:e1)} | atom;
+atom = number | app | upd | var | '('ws expression:e ws')' ws {:e};
+
+app = ws "APP" ws "(" ws var:v ws "," ws number:i ws ")" ws {APP(:v, :i)};
+upd = ws "UPD" ws "(" ws var:v ws "," ws number:i ws "," ws expression:val ws ")" ws {UPD(:v, :i, :val)};
+
+number = digit+$s{Int(s2i($s))};
+var = ws string:name {Var(:name)};
+string = letter+$l ws {$l};
+letter = 'a' - 'z';
+digit = '0' - '9';
+ws = (" " | "\t" | "\n" | "\r")*;
