@@ -27,5 +27,5 @@ which generates AST-tree. Use library lingo.
 Convert an AST-tree of arithmetic expressions back into a string. Implement a calculator, which computes the value of an arithmetic
 expression.
 
-6 LAB:
+6 LAB: 
 Implement a calculator, which uses a reverse polish notation (RPN) expressions with int consts, + and *, and calculates its values.
