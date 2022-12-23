@@ -33,3 +33,21 @@ Implement a calculator, which uses a reverse polish notation (RPN) expressions w
 7 LAB: Enrich the language of arithmetic expressions with subtraction, division, negation and variables.
 The new language is a language of algebraic expressions. Write a function, which computes the value of a given algebraic
 expression with given set of values of variables (caution: the value is rational).
+
+8 LAB: Write a function of a symbolic derivation of a given algebraic expression by a given variable.
+Write a simplification function, which reduces redundant constants like 1 + 0 and x * 0.
+
+9 LAB: Write a function, which converts an algebraic expression into a rational function (a fraction of polynomials).
+Explanation: the AST should contain exactly one division operation, and it should be the tree root.
+
+10 LAB: Write a symbolic simplification function, which finds the smallest form of a given algebraic expression, ruled by
+a set of identities. For example:
+"((a + b) * b)"
+"((x + 1) * (x - 1))"
+"(x + (y - y))"
+"((x*(x*x))+((x*x)*y)"
+
+11 LAB: Write parser of NeMo language.
+
+
+12 LAB: Implement a virtual NeMo machine, which executes programs, translated from NeMo
