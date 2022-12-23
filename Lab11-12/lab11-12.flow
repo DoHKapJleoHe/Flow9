@@ -1,0 +1,1010 @@
+import string;
+import ds/array;
+import ds/tree;
+import ds/set;
+import lingo/pegcode/driver;
+
+//TODO: Select correctness in checkBody
+
+grammar = compilePegGrammar("#include C:\Users\eduar\MTK_Labs\lab11_grammar.lingo");
+
+Exp ::= Add, Sub, Mul, Div, Var, Int, APP, UPD;
+Sub(left: Exp, right: Exp);
+Add(left: Exp, right: Exp); 
+Mul(left: Exp, right: Exp);
+Div(left: Exp, right: Exp);
+Neg(exp: Exp);
+Var(letter: string);
+Int(num: int);
+
+Program(def_vars: [DefVar], body: Body);
+Body::= Assignment, Test, Iter, Next, Select; // выкинул селект
+Next(next: [Body]);
+Select(sel : [Body]); 
+Assignment(var: string, exp: Exp);
+DefVar(name: string, type: Type);
+Test(be: Condition);
+Iter(b: Body);
+APP(var: Var, index: Int);
+UPD(var: Var, index: Int, val: Exp);
+
+Type::= INT, Array;
+INT();
+Array(type: Type);
+
+Condition::= LogicAnd, LogicOr, LogicNot, Comparison;
+LogicOr(left: Condition, right: Condition);
+LogicAnd(left: Condition, right: Condition);
+LogicNot(cond: Condition);
+
+Comparison(left: Exp, right: Exp, relation: Relation);
+Relation::= Equal, NotEqual, Greater, Less, GreaterEqual, LessEqual;
+Equal();
+NotEqual();
+Greater();
+GreaterEqual();
+Less();
+LessEqual();
+
+// TRANSLATION TO VM CODE
+vmVar(name: string, type: Type, val : Value);
+Value::= ArrVal, IntVal;
+ArrVal(val: [Value]);
+IntVal(val: int);
+
+vmCode(vars: [DefVar], opers: [vmOper]);
+vmOper::= AssignOper, CondOper;
+AssignOper(label: int, name: string, exp: Exp, goto: [int]);
+CondOper(label: int, cond: Condition, then: [int], or: [int]);
+
+State(label: int, vars: Tree<string, vmVar>);
+
+translateToVMCode(prog: Program) -> vmCode
+{
+    vars = prog.def_vars;
+    opers = progBodyToOpers(prog.body);
+    vmCode(vars, opers);
+}
+
+progBodyToOpers(body: Body) -> [vmOper]
+{
+    switch(body)
+    {
+        Assignment(var, expr):
+        {
+            [AssignOper(0, var, expr, [1])];
+        }
+        Test(cond):
+        {
+            [CondOper(0, cond, [1], [])];
+        }
+        Next(next):
+        {
+            fold(next, [], \ops, nt -> {
+                end = operMaxLabel(ops);
+                next_ops = increaseOperLabels(progBodyToOpers(nt), end);
+                concat(ops, next_ops);
+            });
+        }
+        Select(sel):
+        {
+            fold(sel, [], \ops, st -> 
+            {
+                opers = increaseOperLabels(ops, 1);
+                end_prev = operMaxLabel(opers);
+                next_ops = increaseOperLabels(progBodyToOpers(st), end_prev);
+                end_next = operMaxLabel(next_ops);
+                concat(
+                    concat(
+                        [CondOper(0, Comparison(Int(1), Int(1), Equal()), [1, end_prev], [])], 
+                        replaceLabel(opers, end_next, end_prev)
+                    ), 
+                    next_ops
+                );
+            });
+        }
+        Iter(b):
+        {
+            ops = increaseOperLabels(progBodyToOpers(b), 1);
+            end = operMaxLabel(ops);
+            concat([CondOper(0, Comparison(Int(1), Int(1), Equal()), [1, end], [])], replaceLabel(ops, 0, end));
+        }
+    }
+}
+
+operMaxLabel(ops: [vmOper]) -> int
+{
+    fold(ops, 0, \max_l, op -> {
+        m = switch(op)
+        {
+            AssignOper(label, name, expr, goto):
+            {
+                max(label, fold(goto, 0, max));
+            }
+            CondOper(label, cond, then, or):
+            {
+                max(fold(then, 0, max), max(label, fold(or, 0, max)));
+            }
+        }
+        max(max_l, m);
+    });
+}
+
+increaseOperLabels(ops: [vmOper], value: int) -> [vmOper]
+{
+    map(ops, \op -> {
+        switch (op) {
+            AssignOper(label, name, expr, goto):
+            {
+                AssignOper(label + value, name, expr, map(goto, \l -> l + value));
+            }
+            CondOper(label, cond, then, or): 
+            {
+                CondOper(label + value, cond, map(then, \l -> l + value), map(or, \l -> l + value));
+            }
+        }
+    });   
+}
+
+replaceLabel(ops: [vmOper], to: int, from: int) -> [vmOper]
+{
+    map(ops, \op -> {
+        switch (op) 
+        {
+            AssignOper(label, name, expr, goto): 
+            {
+                AssignOper((if (label == from) to else label), name, expr, map(goto, \l -> (if (l == from) to else l)));
+            }
+            CondOper(label, cond, then, or):
+            {
+                CondOper((if (label == from) to else label), cond, map(then, \l ->  (if (l == from) to else l)), map(or, \l -> (if (l == from) to else l)));
+            }
+        }
+    });
+}
+
+executeProgram(code: vmCode) -> [State]
+{
+    vars = fold(code.vars, makeTree(), \tree, dec -> {
+        setTree(tree, dec.name, vmVar(dec.name, dec.type, switch(dec.type) {
+            INT(): IntVal(0);
+            Array(typ): ArrVal([]);
+        }))
+    });
+
+    executeCode(code.opers, [State(0, vars)]);
+}
+
+executeCode(opers: [vmOper], states: [State]) -> [State]
+{
+    exit_label = operMaxLabel(opers);
+
+    new_states = fold(states, [], \sts, st -> {
+        label = st.label;
+
+        ops = findLabel(opers, label);
+        new_sts = fold(ops, [], \n_o, op -> { 
+            switch(op) 
+            {
+                AssignOper(lbl, name, expr, goto): 
+                {
+                    vars = execAssign(name, expr, st.vars);
+                    fold(goto, [], \n_s, l -> {
+                        arrayPush(n_s, State(l, vars));
+                    });
+                }
+                CondOper(lbl, cond, then, or): 
+                {
+                    p = execCond(cond, st.vars);
+                    if(p) 
+                    {
+                        fold(then, [], \n_s, l -> {
+                            arrayPush(n_s, State(l, st.vars));
+                        });
+                    }
+                    else 
+                    {
+                        fold(or, [], \n_s, l -> {
+                            arrayPush(n_s, State(l, st.vars));
+                        });
+                    }
+                }
+            }
+        });
+
+        concat(sts, new_sts);
+    });
+
+     exit_states = fold(new_states, [], \es, st -> {
+        if (st.label == exit_label) 
+        {
+            arrayPush(es, st);
+        } 
+        else 
+        {
+            es;
+        }
+    });
+
+    exec_states = fold(new_states, [], \sts, st -> {
+        if (contains(exit_states, st)) 
+        {
+            sts;
+        } 
+        else 
+        {
+            arrayPush(sts, st);
+        }
+    });
+
+    if (length(exec_states) == 0) 
+    {
+        exit_states;
+    } 
+    else 
+    {
+        concat(exit_states, executeCode(opers, exec_states));
+    }
+}
+
+findLabel(opers: [vmOper], label: int) -> [vmOper]
+{
+    fold(opers, [], \ops, op -> {
+        if (op.label == label) 
+        {
+            arrayPush(ops, op);
+        } 
+        else 
+        {
+            ops;
+        }
+    });
+}
+
+execAssign(name: string, exp: Exp, vars: Tree<string, vmVar>) -> Tree
+{
+    setTree(vars, name, vmVar(name, getTypeVM(exp, vars), calculate(exp, vars)));
+}
+
+getTypeVM(exp: Exp, declared_vars: Tree<string, vmVar>) -> Type
+{
+    switch (exp) 
+    {
+        Var(name):
+        {
+            var_name = lookupTree(declared_vars, name);
+            switch(var_name)
+            {
+                Some(n): {n.type}
+                None(): 
+                {
+                    println("Not declared variable: " + name);
+                    INT();
+                }
+            }
+        }
+        APP(arr, index): // returns type of array elements
+        {
+            type = getTypeVM(arr, declared_vars);
+            switch(type)
+            {
+                INT():
+                {
+                    println("Trying to APP to a non-array variable");
+                    INT();
+                }
+                Array(typ):
+                {
+                    typ; 
+                }
+            }
+        }
+        UPD(arr, index, val): // returns type of the array
+        {
+            type = getTypeVM(arr, declared_vars);
+            switch(type)
+            {
+                INT():
+                {
+                    println("Trying to UPD a non-array variable");
+                    INT();
+                }
+                Array(typ):
+                {
+                    type;
+                }
+            }
+        }
+        default: INT();
+    }
+}
+
+execCond(condition: Condition, vars: Tree<string, vmVar>) -> bool
+{
+    switch(condition) 
+    {
+        LogicOr(left, right): 
+        {
+            execCond(left, vars) || execCond(right, vars);
+        }
+        LogicAnd(left, right): 
+        {
+            execCond(left, vars) && execCond(right, vars);
+        }
+        LogicNot(cond): 
+        {
+            !execCond(cond, vars);
+        }
+        Comparison(l, r, relation): 
+        {
+            left = calculate(l, vars);
+            right = calculate(r, vars);
+
+            switch(left) 
+            {
+                ArrVal(l_val): 
+                {
+                    println("There is an error in comparison. Can't compare");
+                    false;
+                }
+                IntVal(l_val): 
+                {
+                    switch(right) 
+                    {
+                        ArrVal(r_val): 
+                        {
+                            println("There is an error in comparison. Can't compare");
+                            false;
+                        }
+                        IntVal(r_val): {
+                            switch(relation) 
+                            {
+                                Equal(): l_val == r_val;
+                                NotEqual(): l_val != r_val;
+                                Greater(): l_val > r_val;
+                                GreaterEqual(): l_val >= r_val;
+                                Less(): l_val < r_val;
+                                LessEqual(): l_val <= r_val;
+                            }
+                        }
+                    }
+                }
+            }
+
+        }
+    }
+}
+
+// Exp ::= Add, Sub, Mul, Div, Var, Int, APP, UPD;
+calculate(exp: Exp, vars: Tree<string, vmVar>) -> Value
+{
+    switch(exp) 
+    {
+        Int(value): 
+        {
+            IntVal(value);
+        }
+        Var(name): 
+        {
+            mVar = lookupTree(vars, name);
+            switch(mVar) 
+            {
+                None(): 
+                {
+                    println(name + " variable is not defined.");
+                    IntVal(0);
+                }
+                Some(v): v.val; // v means Vendetta  :)
+            }
+        }
+        APP(a, i): 
+        {
+            array = calculate(a, vars);
+            index = calculate(i, vars);
+
+            switch (array) 
+            {
+                IntVal(v): 
+                {
+                    println("Using invalid array. Can't acces value");
+                    IntVal(0);
+                }
+                ArrVal(v): 
+                {
+                    switch(index) 
+                    {
+                        ArrVal(val): 
+                        {
+                            println("Using invalid array. Can't acces value");
+                            IntVal(0);
+                        }
+                        IntVal(val): 
+                        {
+                            array.val[index.val];
+                        }
+                    }
+                }
+            }
+        }
+        UPD(a, i, v): 
+        {
+            array = calculate(a, vars);
+            index = calculate(i, vars);
+            value = calculate(v, vars);
+
+            switch (array) 
+            {
+                IntVal(val): 
+                {
+                    println("Using invalid array. Can't update");
+                    IntVal(0);
+                }
+                ArrVal(val): 
+                {
+                    switch(index) 
+                    {
+                        ArrVal(arr_v): 
+                        {
+                            println("Using invalid array. Can't update");
+                            IntVal(0);
+                        }
+                        IntVal(int_v): 
+                        {
+                            if (length(array.val) < index.val) 
+                            {
+                                arr = arrayResize(array.val, index.val + 1, IntVal(0));
+                                ArrVal(replace(arr, index.val, value));
+                            } 
+                            else 
+                            {
+                                ArrVal(replace(array.val, index.val, value));
+                            }
+                        }
+                    }
+                }
+            }
+            
+        }
+        Add(l, r):
+        {
+            left = calculate(l, vars);
+            right = calculate(r, vars);
+
+            switch(left)
+            {
+                ArrVal(l_val): 
+                {
+                    println("Can't use arithmetics. There is an error");
+                    IntVal(0);
+                }
+                IntVal(l_val):
+                {
+                     switch(right) 
+                     {
+                        ArrVal(r_val): 
+                        {
+                            println("Can't use arithmetics. There is an error");
+                            IntVal(0);
+                        }
+                        IntVal(r_val): 
+                        {
+                            IntVal(l_val + r_val);
+                        }
+                     }
+                }
+            }
+        }
+        Mul(l, r):
+        {
+            left = calculate(l, vars);
+            right = calculate(r, vars);
+
+            switch(left)
+            {
+                ArrVal(l_val): 
+                {
+                    println("Can't use arithmetics. There is an error");
+                    IntVal(0);
+                }
+                IntVal(l_val):
+                {
+                     switch(right) 
+                     {
+                        ArrVal(r_val): 
+                        {
+                            println("Can't use arithmetics. There is an error");
+                            IntVal(0);
+                        }
+                        IntVal(r_val): 
+                        {
+                            IntVal(l_val * r_val);
+                        }
+                     }
+                }
+            }
+        }
+        Div(l, r):
+        {
+            left = calculate(l, vars);
+            right = calculate(r, vars);
+
+            switch(left)
+            {
+                ArrVal(l_val): 
+                {
+                    println("Can't use arithmetics. There is an error");
+                    IntVal(0);
+                }
+                IntVal(l_val):
+                {
+                     switch(right) 
+                     {
+                        ArrVal(r_val): 
+                        {
+                            println("Can't use arithmetics. There is an error");
+                            IntVal(0);
+                        }
+                        IntVal(r_val): 
+                        {
+                            IntVal(l_val / r_val);
+                        }
+                     }
+                }
+            }
+        }
+        Sub(l, r):
+        {
+            left = calculate(l, vars);
+            right = calculate(r, vars);
+
+            switch(left)
+            {
+                ArrVal(l_val): 
+                {
+                    println("Can't use arithmetics. There is an error");
+                    IntVal(0);
+                }
+                IntVal(l_val):
+                {
+                     switch(right) 
+                     {
+                        ArrVal(r_val): 
+                        {
+                            println("Can't use arithmetics. There is an error");
+                            IntVal(0);
+                        }
+                        IntVal(r_val): 
+                        {
+                            IntVal(l_val - r_val);
+                        }
+                     }
+                }
+            }
+        }
+        
+    }
+}
+
+// PROGRAMM CORRECTNESS CHECK
+
+checkProgram(prog: Program) -> bool
+{
+    decl = checkDecl(prog.def_vars);
+    switch(decl)
+    {
+        None(): false;
+        Some(dec):
+        {
+            checkBody(prog.body, dec);
+        }
+    }
+}
+
+checkDecl(defs: [DefVar]) -> Maybe<Tree>
+{
+    fold(defs, Some(makeTree()), \vars, def -> {
+        switch (vars) 
+        {
+            None() : None();
+            Some(tree): 
+            { 
+                var = lookupTree(tree, def.name);
+                switch(var)
+                {
+                    None():
+                    {
+                        maybeMap(vars, \t -> setTree(t, def.name, def.type));   
+                    }
+                    Some(v):
+                    {
+                        println("Do not redeclare: " + def.name);
+                        None();
+                    }
+                }
+            }
+        }
+    }); 
+}
+
+checkBody(body: Body, declared_vars: Tree<string, Type>) -> bool
+{
+    switch(body)
+    {
+        Assignment(var, ex):
+        {
+            mvar = lookupTree(declared_vars, var);
+            switch (mvar) 
+            {
+                None(): 
+                {
+                    println("Assigning to the not declared veriable");
+                    false;
+                }
+                Some(v):
+                {
+                    checkExpression(ex, declared_vars); // + check types
+                }
+            }
+        }
+        Test(be):
+        {
+            checkCond(be, declared_vars);
+        }
+        Iter(b):
+        {
+            checkBody(b, declared_vars);
+        }
+        Next(b):
+        {
+            fold(b, true, \correct, next -> {
+                correct && checkBody(next, declared_vars);
+            });
+        }
+        Select(s):
+        {
+            fold(s, true, \correct, st -> {
+                correct && checkBody(st, declared_vars);
+            });
+        }
+    }
+}
+
+//Exp ::= Add, Sub, Mul, Div, Var, Int, APP, UPD;
+checkExpression(exp: Exp, declared_vars: Tree<string, Type>) -> bool
+{
+    switch(exp)
+    {
+        APP(arr, index):
+        {
+            // index can be an expression :)
+            firstCheck = checkExpression(arr, declared_vars) && checkExpression(index, declared_vars);
+
+            secondCheck = isArrayType(getType(arr, declared_vars));
+            if(!secondCheck)
+            {
+                println("Using not valid array in APP");
+            } 
+
+            thirdCheck = areTypesEqual(getType(index, declared_vars), INT());
+            if(!thirdCheck)
+            {
+                println("Using not valid index in APP");
+            }
+
+            firstCheck && secondCheck && thirdCheck;
+        }
+        UPD(arr, index, val):
+        {
+            firstCheck = checkExpression(arr, declared_vars) && checkExpression(index, declared_vars) && checkExpression(val, declared_vars);
+
+            secondCheck = getType(arr, declared_vars);
+            correctnes = switch(secondCheck)
+            {
+                INT():
+                {
+                    println("Using not valid array in UPD");
+                    false;
+                }
+                Array(t):
+                {
+                    value = areTypesEqual(t, getType(val, declared_vars));
+                    if(value)
+                    {
+                        true;
+                    }
+                    else
+                    {
+                        println("Value type do not match array type in UPD");
+                        false;
+                    }
+                }
+            }
+
+            thirdCheck = areTypesEqual(getType(index, declared_vars), INT());
+            if(!thirdCheck)
+            {
+                println("Using not valid index in APP");
+            }
+
+            firstCheck && correctnes && thirdCheck;
+        }
+        Var(name):
+        {
+            var = lookupTree(declared_vars, name);
+            switch(var)
+            {
+                Some(v):
+                {
+                    true;
+                }
+                None():
+                {
+                    println("Variable: " + name + "not declared");
+                    false;
+                }
+            }
+        }
+        Add(left, right):
+        {
+            firstCheck = checkExpression(left, declared_vars) && checkExpression(right, declared_vars);
+
+            leftInt = areTypesEqual(getType(left, declared_vars), INT());
+            if(!leftInt)
+            {
+                println("Left value of addition is not correct");
+            }
+
+            rightInt = areTypesEqual(getType(right, declared_vars), INT());
+            if(!rightInt)
+            {
+                println("Right value of addition is not correct");
+            }
+
+            firstCheck && leftInt && rightInt;
+        }
+        Mul(left, right):
+        {
+            firstCheck = checkExpression(left, declared_vars) && checkExpression(right, declared_vars);
+
+            leftInt = areTypesEqual(getType(left, declared_vars), INT());
+            if(!leftInt)
+            {
+                println("Left value of mul is not correct");
+            }
+
+            rightInt = areTypesEqual(getType(right, declared_vars), INT());
+            if(!rightInt)
+            {
+                println("Right value of mul is not correct");
+            }
+
+            firstCheck && leftInt && rightInt;
+        }
+        Div(left, right):
+        {
+            firstCheck = checkExpression(left, declared_vars) && checkExpression(right, declared_vars);
+
+            leftInt = areTypesEqual(getType(left, declared_vars), INT());
+            if(!leftInt)
+            {
+                println("Left value of div is not correct");
+            }
+
+            rightInt = areTypesEqual(getType(right, declared_vars), INT());
+            if(!rightInt)
+            {
+                println("Right value of div is not correct");
+            }
+
+            firstCheck && leftInt && rightInt;
+        }
+        Sub(left, right):
+        {  
+            firstCheck = checkExpression(left, declared_vars) && checkExpression(right, declared_vars);
+
+            leftInt = areTypesEqual(getType(left, declared_vars), INT());
+            if(!leftInt)
+            {
+                println("Left value of sub is not correct");
+            }
+
+            rightInt = areTypesEqual(getType(right, declared_vars), INT());
+            if(!rightInt)
+            {
+                println("Right value of sub is not correct");
+            }
+
+            firstCheck && leftInt && rightInt;
+        }
+        default: true;
+    }
+}
+
+isArrayType(type: Type) -> bool
+{
+    switch (type) 
+    {
+        INT(): false;
+        Array(a): true;
+    }
+}
+
+areTypesEqual(type1: Type, type2: Type) -> bool
+{
+    switch(type1)
+    {
+        INT():
+        {
+            switch (type2) 
+            {
+                INT(): true;
+                Array(a): false
+            }
+        }
+        Array(a):
+        {
+            switch (type2) 
+            {
+                INT(): false;
+                Array(b): areTypesEqual(a, b);
+            }
+        }
+    }
+}
+
+checkCond(cond: Condition, declared_vars: Tree<string, Type>) -> bool
+{
+    switch(cond)
+    {
+        LogicAnd(left, right):
+        {
+            checkCond(left, declared_vars) && checkCond(right, declared_vars);
+        }
+        LogicOr(left, right):
+        {
+            checkCond(left, declared_vars) && checkCond(right, declared_vars);
+        }
+        LogicNot(a):
+        {
+            checkCond(a, declared_vars);
+        }
+        Comparison(left, right, relation):
+        {
+            firstCheck = checkExpression(left, declared_vars) && checkExpression(right, declared_vars);
+
+            l = areTypesEqual(getType(left, declared_vars), INT());
+            if(!l)
+            {
+                println("There is an mistake in comparison");
+            }
+
+            r = areTypesEqual(getType(right, declared_vars), INT());
+            if(!r)
+            {
+                println("There is an mistake in comparison");
+            }
+
+            firstCheck && l && r;
+        }
+    }
+}
+
+getType(exp: Exp, declared_vars: Tree<string, Type>) -> Type
+{
+    switch (exp) 
+    {
+        Var(name):
+        {
+            var_name = lookupTree(declared_vars, name);
+            switch(var_name)
+            {
+                Some(n): {n}
+                None(): 
+                {
+                    println("Not declared variable: " + name);
+                    INT();
+                }
+            }
+        }
+        APP(arr, index): // returns type of array elements
+        {
+            type = getType(arr, declared_vars);
+            switch(type)
+            {
+                INT():
+                {
+                    println("Trying to APP to a non-array variable");
+                    INT();
+                }
+                Array(typ):
+                {
+                    typ; 
+                }
+            }
+        }
+        UPD(arr, index, val): // returns type of the array
+        {
+            type = getType(arr, declared_vars);
+            switch(type)
+            {
+                INT():
+                {
+                    println("Trying to UPD a non-array variable");
+                    INT();
+                }
+                Array(typ):
+                {
+                    type;
+                }
+            }
+        }
+        default: INT();
+    }
+}
+
+buildSub(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Sub(acc, x));
+}
+
+buildAdd(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Add(acc, x));
+}
+
+buildMul(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Mul(acc, x));
+}
+
+buildDiv(xs : [flow])
+{
+    fold(xs[1], xs[0], \acc, x -> Mul(acc, x));
+}
+
+buildSelect(xs : [flow])
+{
+    Select(insertArray(xs[1], 0, xs[0]));
+}
+
+specialPegActions = {
+    f = setTree(defaultPegActions.t, "buildSelect", buildSelect);
+
+	s = setTree(f, "buildSub", buildSub);
+
+    a = setTree(s, "buildAdd", buildAdd);
+
+    m = setTree(a, "buildMul", buildMul);
+
+    d = setTree(m, "buildDiv", buildDiv);
+
+	SemanticActions(d);
+}
+
+parse(text : string)
+{
+    parsic(grammar, text, specialPegActions);
+}
+
+main()
+{
+    programm = "VAR x : INT;
+                {
+                    x := 3 + 1;  
+                }";
+    prog = parse(programm);
+
+    println(prog);
+
+    correct = checkProgram(prog);
+    if(correct)
+    {
+        println("Program is correct!");
+        code = translateToVMCode(prog);
+
+        final = executeProgram(code);
+        println(final);
+    }
+
+    quit(0);
+}
