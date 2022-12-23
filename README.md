@@ -29,3 +29,7 @@ expression.
 
 6 LAB: 
 Implement a calculator, which uses a reverse polish notation (RPN) expressions with int consts, + and *, and calculates its values.
+
+7 LAB: Enrich the language of arithmetic expressions with subtraction, division, negation and variables.
+The new language is a language of algebraic expressions. Write a function, which computes the value of a given algebraic
+expression with given set of values of variables (caution: the value is rational).
